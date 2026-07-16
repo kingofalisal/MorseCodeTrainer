@@ -64,6 +64,7 @@ export class MorsePlayer {
     this.ctx = null;
     this.stopFlag = false;
     this.playing = false;
+    this.unlocked = false;
   }
 
   async _getCtx() {
@@ -76,6 +77,24 @@ export class MorsePlayer {
     return this.ctx;
   }
 
+  // Call this on any user gesture (tap/click) to unlock audio on iOS
+  async unlock() {
+    if (this.unlocked) return;
+    try {
+      const ctx = await this._getCtx();
+      // Play a silent buffer — this is the iOS unlock trick
+      const buf = ctx.createBuffer(1, 1, 22050);
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      src.connect(ctx.destination);
+      src.start(0);
+      await ctx.resume();
+      this.unlocked = true;
+    } catch (e) {
+      console.warn('Audio unlock failed:', e);
+    }
+  }
+
   stop() {
     this.stopFlag = true;
     this.playing = false;
@@ -85,6 +104,7 @@ export class MorsePlayer {
     this.stopFlag = false;
     this.playing = true;
     const ctx = await this._getCtx();
+    await ctx.resume();
 
     for (const item of sequence) {
       if (this.stopFlag) break;
