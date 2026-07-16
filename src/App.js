@@ -62,9 +62,11 @@ export default function App() {
     if (!word) return;
     player.stop();
     setPlaying(true);
-    const timings = getMorseTimings(settings.wpm, settings.farnsworth);
-    const seq = buildMorseSequence(word, timings);
-    player.play(seq, 700, () => setPlaying(false));
+    player.unlock().then(() => {
+      const timings = getMorseTimings(settings.wpm, settings.farnsworth);
+      const seq = buildMorseSequence(word, timings);
+      player.play(seq, 700, () => setPlaying(false));
+    });
   }, [settings.wpm, settings.farnsworth]);
 
   const nextWord = useCallback((fromReplay = false) => {
@@ -96,7 +98,9 @@ export default function App() {
   }, [settings, replaySession, replayIndex, playWord]);
 
   const replayCurrentWord = useCallback(() => {
-    if (currentWord) playWord(currentWord);
+    if (currentWord) {
+      player.unlock().then(() => playWord(currentWord));
+    }
   }, [currentWord, playWord]);
 
   useEffect(() => {
