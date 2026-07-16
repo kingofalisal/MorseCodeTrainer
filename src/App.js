@@ -49,7 +49,7 @@ export default function App() {
   const [wpmInput, setWpmInput] = useState(String(settings.wpm));
   const [minLenInput, setMinLenInput] = useState(String(settings.minLen));
   const [maxLenInput, setMaxLenInput] = useState(String(settings.maxLen));
-  const [sessionLog, setSessionLog] = useState([]);
+  const [, setSessionLog] = useState([]);
 
   const answerRef = useRef(null);
   const fs = FONT_SIZES[settings.fontSize];
