@@ -58,15 +58,14 @@ export default function App() {
 
   const updateSetting = (key, val) => setSettings(s => ({ ...s, [key]: val }));
 
+  // Plays a word — must only be called after initContext() in the same gesture
   const playWord = useCallback((word) => {
     if (!word) return;
     player.stop();
     setPlaying(true);
-    player.unlock().then(() => {
-      const timings = getMorseTimings(settings.wpm, settings.farnsworth);
-      const seq = buildMorseSequence(word, timings);
-      player.play(seq, 700, () => setPlaying(false));
-    });
+    const timings = getMorseTimings(settings.wpm, settings.farnsworth);
+    const seq = buildMorseSequence(word, timings);
+    player.play(seq, 700, () => setPlaying(false));
   }, [settings.wpm, settings.farnsworth]);
 
   const nextWord = useCallback((fromReplay = false) => {
@@ -93,29 +92,42 @@ export default function App() {
     }
 
     setCurrentWord(word);
+    // Small delay so state settles, but word is captured in closure
     setTimeout(() => playWord(word), 150);
     answerRef.current?.focus();
   }, [settings, replaySession, replayIndex, playWord]);
 
-  const replayCurrentWord = useCallback(() => {
-    if (currentWord) {
-      player.unlock().then(() => playWord(currentWord));
-    }
-  }, [currentWord, playWord]);
+  // iOS-safe replay: initContext() is called synchronously in the click handler
+  const replayCurrentWord = useCallback((word) => {
+    player.initContext();           // synchronous — must be first, in gesture handler
+    playWord(word);                 // kicks off async playback immediately after
+  }, [playWord]);
 
+  // Keyboard shortcut — Space to replay (only when not typing in input)
   useEffect(() => {
     const handler = (e) => {
       if (e.code === 'Space' && document.activeElement !== answerRef.current) {
         e.preventDefault();
-        replayCurrentWord();
+        if (currentWord) {
+          player.initContext();
+          playWord(currentWord);
+        }
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [replayCurrentWord]);
+  }, [currentWord, playWord]);
 
+  // On first load, just pick a word — don't auto-play (no user gesture yet on mobile)
   useEffect(() => {
-    nextWord();
+    const word = getWord(
+      DEFAULT_SETTINGS.mode,
+      DEFAULT_SETTINGS.minLen,
+      DEFAULT_SETTINGS.maxLen,
+      DEFAULT_SETTINGS.vocabulary
+    );
+    setCurrentWord(word);
+    answerRef.current?.focus();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -158,6 +170,8 @@ export default function App() {
         return updated;
       });
     }
+    // initContext synchronously here too so Next auto-plays next word on iOS
+    player.initContext();
     nextWord(!!replaySession);
   };
 
@@ -176,6 +190,7 @@ export default function App() {
     setReplaySession(session);
     setReplayIndex(0);
     setTab('practice');
+    player.initContext();
     nextWord(false);
   };
 
@@ -185,6 +200,7 @@ export default function App() {
     setReplaySession({ words, entries: [] });
     setReplayIndex(0);
     setTab('practice');
+    player.initContext();
     setTimeout(() => nextWord(false), 50);
   };
 
@@ -336,7 +352,7 @@ export default function App() {
               <div className="playback-controls">
                 <button
                   className={`btn-primary play-btn${playing ? ' playing' : ''}`}
-                  onClick={replayCurrentWord}
+                  onClick={() => replayCurrentWord(currentWord)}
                   disabled={playing}
                 >
                   {playing ? (
@@ -348,7 +364,8 @@ export default function App() {
               </div>
 
               {lastScore !== null && (
-                <div className={`score-display ${lastScore >= 80 ? 'good' : lastScore >= 50 ? 'ok' : 'poor'}`}
+                <div
+                  className={`score-display ${lastScore >= 80 ? 'good' : lastScore >= 50 ? 'ok' : 'poor'}`}
                   style={{ fontSize: fs.display }}
                 >
                   {lastScore}%
