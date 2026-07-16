@@ -32,15 +32,13 @@ const player = new MorsePlayer();
 
 export default function App() {
   const [settings, setSettings] = useState(() => ({ ...DEFAULT_SETTINGS, ...loadSettings() }));
-  const [tab, setTab] = useState('practice'); // practice | history | missed | progress
+  const [tab, setTab] = useState('practice');
   const [currentWord, setCurrentWord] = useState('');
   const [answer, setAnswer] = useState('');
   const [submitted, setSubmitted] = useState(false);
-  const [score, setScore] = useState(null);
   const [revealed, setRevealed] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [attempts, setAttempts] = useState([]);
-  const [sessionWords, setSessionWords] = useState([]);
   const [history, setHistory] = useState(() => loadHistory());
   const [missed, setMissed] = useState(() => loadMissed());
   const [dailyStats, setDailyStats] = useState(() => loadDailyStats());
@@ -51,21 +49,28 @@ export default function App() {
   const [wpmInput, setWpmInput] = useState(String(settings.wpm));
   const [minLenInput, setMinLenInput] = useState(String(settings.minLen));
   const [maxLenInput, setMaxLenInput] = useState(String(settings.maxLen));
+  const [sessionLog, setSessionLog] = useState([]);
 
   const answerRef = useRef(null);
   const fs = FONT_SIZES[settings.fontSize];
 
-  // Persist settings
   useEffect(() => { saveSettings(settings); }, [settings]);
 
   const updateSetting = (key, val) => setSettings(s => ({ ...s, [key]: val }));
 
-  // Generate or get next word
+  const playWord = useCallback((word) => {
+    if (!word) return;
+    player.stop();
+    setPlaying(true);
+    const timings = getMorseTimings(settings.wpm, settings.farnsworth);
+    const seq = buildMorseSequence(word, timings);
+    player.play(seq, 700, () => setPlaying(false));
+  }, [settings.wpm, settings.farnsworth]);
+
   const nextWord = useCallback((fromReplay = false) => {
     player.stop();
     setAnswer('');
     setSubmitted(false);
-    setScore(null);
     setRevealed(false);
     setAttempts([]);
     setSavedThisWord(false);
@@ -88,22 +93,12 @@ export default function App() {
     setCurrentWord(word);
     setTimeout(() => playWord(word), 150);
     answerRef.current?.focus();
-  }, [settings, replaySession, replayIndex]);
-
-  const playWord = useCallback((word) => {
-    if (!word) return;
-    player.stop();
-    setPlaying(true);
-    const timings = getMorseTimings(settings.wpm, settings.farnsworth);
-    const seq = buildMorseSequence(word, timings);
-    player.play(seq, 700, () => setPlaying(false));
-  }, [settings.wpm, settings.farnsworth]);
+  }, [settings, replaySession, replayIndex, playWord]);
 
   const replayCurrentWord = useCallback(() => {
     if (currentWord) playWord(currentWord);
   }, [currentWord, playWord]);
 
-  // Keyboard shortcut: Space to replay (when not typing)
   useEffect(() => {
     const handler = (e) => {
       if (e.code === 'Space' && document.activeElement !== answerRef.current) {
@@ -115,7 +110,6 @@ export default function App() {
     return () => window.removeEventListener('keydown', handler);
   }, [replayCurrentWord]);
 
-  // Start first word on mount
   useEffect(() => {
     nextWord();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -124,11 +118,8 @@ export default function App() {
   const handleSubmit = () => {
     if (!answer.trim()) return;
     const s = scoreAnswer(currentWord, answer);
-    setScore(s);
     setSubmitted(true);
     setAttempts(prev => [...prev, { answer, score: s }]);
-
-    // Record every attempt to daily stats
     recordAttempt(settings.wpm, s);
     setDailyStats(loadDailyStats());
     setBests(getPersonalBests());
@@ -137,7 +128,6 @@ export default function App() {
   const handleResubmit = () => {
     if (!answer.trim()) return;
     const s = scoreAnswer(currentWord, answer);
-    setScore(s);
     setAttempts(prev => [...prev, { answer, score: s }]);
     recordAttempt(settings.wpm, s);
     setDailyStats(loadDailyStats());
@@ -145,7 +135,6 @@ export default function App() {
   };
 
   const handleNext = () => {
-    // Log completed word to session
     if (currentWord && attempts.length > 0) {
       const bestScore = Math.max(...attempts.map(a => a.score));
       const entry = {
@@ -156,7 +145,7 @@ export default function App() {
         bestScore,
         timestamp: Date.now(),
       };
-      setSessionWords(prev => {
+      setSessionLog(prev => {
         const updated = [...prev, entry];
         if (updated.length % 5 === 0) {
           saveSession({ words: updated.map(w => w.word), entries: updated });
@@ -217,7 +206,7 @@ export default function App() {
   };
 
   const chartData = dailyStats.slice(-30).map(s => ({
-    date: s.date.slice(5), // MM-DD
+    date: s.date.slice(5),
     accuracy: Math.round(s.avgAccuracy),
     wpm: s.wpm,
   }));
@@ -257,10 +246,8 @@ export default function App() {
       </header>
 
       <main className="main-content">
-        {/* ── PRACTICE TAB ── */}
         {tab === 'practice' && (
           <div className="practice-panel">
-            {/* Settings row */}
             <div className="settings-bar">
               <div className="setting-group">
                 <label>Mode</label>
@@ -335,7 +322,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* Main practice area */}
             <div className="practice-area">
               {replaySession && (
                 <div className="replay-banner">
@@ -343,7 +329,6 @@ export default function App() {
                 </div>
               )}
 
-              {/* Playback controls */}
               <div className="playback-controls">
                 <button
                   className={`btn-primary play-btn${playing ? ' playing' : ''}`}
@@ -358,7 +343,6 @@ export default function App() {
                 </button>
               </div>
 
-              {/* Score display */}
               {lastScore !== null && (
                 <div className={`score-display ${lastScore >= 80 ? 'good' : lastScore >= 50 ? 'ok' : 'poor'}`}
                   style={{ fontSize: fs.display }}
@@ -370,7 +354,6 @@ export default function App() {
                 </div>
               )}
 
-              {/* Answer input */}
               <div className="answer-section">
                 <input
                   ref={answerRef}
@@ -400,7 +383,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Reveal & save */}
               {submitted && (
                 <div className="reveal-row">
                   {!revealed ? (
@@ -432,7 +414,6 @@ export default function App() {
                 </div>
               )}
 
-              {/* Attempt history for this word */}
               {attempts.length > 1 && (
                 <div className="attempt-history">
                   <span className="attempt-label">Attempts:</span>
@@ -447,7 +428,6 @@ export default function App() {
           </div>
         )}
 
-        {/* ── PROGRESS TAB ── */}
         {tab === 'progress' && (
           <div className="progress-panel">
             <h2>Progress</h2>
@@ -461,7 +441,6 @@ export default function App() {
                 <span className="best-val">{Math.round(bests.accuracy)}%</span>
               </div>
             </div>
-
             {chartData.length > 1 ? (
               <div className="chart-wrap">
                 <ResponsiveContainer width="100%" height={320}>
@@ -482,7 +461,6 @@ export default function App() {
           </div>
         )}
 
-        {/* ── HISTORY TAB ── */}
         {tab === 'history' && (
           <div className="history-panel">
             <h2>Past sessions</h2>
@@ -496,18 +474,13 @@ export default function App() {
                       <span className="session-date">
                         {new Date(session.timestamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
                       </span>
-                      <span className="session-info">
-                        {session.words?.length || 0} words
-                      </span>
+                      <span className="session-info">{session.words?.length || 0} words</span>
                     </div>
                     <div className="session-words">
                       {session.words?.slice(0, 8).join(' · ')}
                       {session.words?.length > 8 && ' …'}
                     </div>
-                    <button
-                      className="btn-ghost small"
-                      onClick={() => handleReplaySession(session)}
-                    >
+                    <button className="btn-ghost small" onClick={() => handleReplaySession(session)}>
                       Replay session
                     </button>
                   </div>
@@ -517,7 +490,6 @@ export default function App() {
           </div>
         )}
 
-        {/* ── MISSED WORDS TAB ── */}
         {tab === 'missed' && (
           <div className="missed-panel">
             <h2>Missed words</h2>
@@ -533,9 +505,7 @@ export default function App() {
                     <div key={i} className="missed-card">
                       <span className="missed-word">{m.word}</span>
                       <span className="missed-mode">{m.mode}</span>
-                      <button className="btn-ghost small remove-btn" onClick={() => handleRemoveMissed(m.word)}>
-                        ✕
-                      </button>
+                      <button className="btn-ghost small remove-btn" onClick={() => handleRemoveMissed(m.word)}>✕</button>
                     </div>
                   ))}
                 </div>
