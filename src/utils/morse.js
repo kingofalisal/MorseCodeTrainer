@@ -64,35 +64,23 @@ export class MorsePlayer {
     this.ctx = null;
     this.stopFlag = false;
     this.playing = false;
-    this.unlocked = false;
   }
 
-  async _getCtx() {
+  // Must be called synchronously inside a user gesture (tap/click handler)
+  // iOS requires AudioContext creation AND resume to happen in the same
+  // synchronous call stack as the user event — no await before this.
+  initContext() {
     if (!this.ctx || this.ctx.state === 'closed') {
       this.ctx = new (window.AudioContext || window.webkitAudioContext)();
     }
-    if (this.ctx.state === 'suspended') {
-      await this.ctx.resume();
-    }
-    return this.ctx;
-  }
-
-  // Call this on any user gesture (tap/click) to unlock audio on iOS
-  async unlock() {
-    if (this.unlocked) return;
-    try {
-      const ctx = await this._getCtx();
-      // Play a silent buffer — this is the iOS unlock trick
-      const buf = ctx.createBuffer(1, 1, 22050);
-      const src = ctx.createBufferSource();
-      src.buffer = buf;
-      src.connect(ctx.destination);
-      src.start(0);
-      await ctx.resume();
-      this.unlocked = true;
-    } catch (e) {
-      console.warn('Audio unlock failed:', e);
-    }
+    // Play a silent buffer synchronously to unlock iOS
+    const buf = this.ctx.createBuffer(1, 1, 22050);
+    const src = this.ctx.createBufferSource();
+    src.buffer = buf;
+    src.connect(this.ctx.destination);
+    src.start(0);
+    // Resume is synchronous enough on iOS when called in gesture handler
+    this.ctx.resume();
   }
 
   stop() {
@@ -101,10 +89,15 @@ export class MorsePlayer {
   }
 
   async play(sequence, frequency = 700, onDone) {
+    if (!this.ctx) return;
     this.stopFlag = false;
     this.playing = true;
-    const ctx = await this._getCtx();
-    await ctx.resume();
+    const ctx = this.ctx;
+
+    // Ensure running
+    if (ctx.state === 'suspended') {
+      await ctx.resume();
+    }
 
     for (const item of sequence) {
       if (this.stopFlag) break;
